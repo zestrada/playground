@@ -1,18 +1,21 @@
 #include <stdio.h>
 #include <pthread.h>
 
+__thread int tid;
 
 void *thread_func(void* foo) {
   int canary;
   int tls;
 
   asm("movl %%gs:0x14,%0\n" 
-      "movl %%gs,%1\n" 
+      "movl %%gs:0x0,%1\n" 
       :"=r"(canary),"=r"(tls)
   );
 
-  printf("%x: canary value: 0x%x\n", pthread_self(), canary);
-  printf("%x: tls: 0x%x\n", pthread_self(), tls);
+  tid = pthread_self();
+
+  printf("%x: canary value: 0x%x\n", tid, canary);
+  printf("%x: tls: 0x%x\n", tid, tls);
 }
 
 int main() {
