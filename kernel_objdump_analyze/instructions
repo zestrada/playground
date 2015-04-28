@@ -1,0 +1,2 @@
+clts
+mov\s+\%\w+,\%cr\d
