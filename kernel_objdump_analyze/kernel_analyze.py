@@ -9,8 +9,6 @@
 #from the kernel.org tree to get it.  Likewise, you can use scripts/mksysmap to
 #generate that one.
 #
-#We call 'objdump -d' and store that in memory, so this takes ~100MB of RAM 
-#when running.
 
 import re
 import sys
@@ -21,6 +19,10 @@ KERNEL='/home/zak/arch_kernel/vmlinux'
 SYSMAP='/home/zak/arch_kernel/System.map'
 INSNS='./instructions'
 OBJDUMP='objdump'
+#STYLE='objdump' #we're using objdump
+STYLE='tracecap' #we're using tracecap output
+TRACEFILE='/tmp/kern.text' #ASCII translated tracecap
+
 
 regexes=[]
 sysmap={} #bonus points for unreable case sensitive variable names?
@@ -28,7 +30,8 @@ sysmap={} #bonus points for unreable case sensitive variable names?
 #First, load regexes
 with open(INSNS, "r") as ins:
     for line in ins:
-        regexes.append(re.compile(line.rstrip()))
+        if(line[0]!='#'):
+          regexes.append(re.compile(line.rstrip()))
 
 if(len(regexes)<=0):
   sys.exit("No instruction regexes found in %s!"%INSNS)
@@ -46,17 +49,34 @@ with open(SYSMAP, "r") as maps:
 
 #Now see what we get. Use a subprocess so we start processes while objdump is
 #chugging along
-proc = subprocess.Popen([OBJDUMP,'-d',KERNEL],stdout=subprocess.PIPE)
+if(STYLE=='objdump'):
+  proc = subprocess.Popen([OBJDUMP,'-d',KERNEL],stdout=subprocess.PIPE)
+else: #tracecap
+  trace_regex=re.compile(r'\(\d+\)\s(\w+:)\s+([^\t]*)')
+  proc = subprocess.Popen(['cat',TRACEFILE],stdout=subprocess.PIPE)
 
 print "#FUNCTIONNAME;INSTRUCTION;ADDRESS" #our output format
 while True:
   objout = proc.stdout.readline()
   if objout == '':
     break
-  #Example tab-delimited output:
-  #ADDRESS    INSTRUCTION           ASCII
-  #c1000000:  8b 0d 80 16 5d 01     mov    0x15d1680,%ecx
-  line = string.split(objout.rstrip(),'\t')
+  if(STYLE=='objdump'):
+    #Example tab-delimited output:
+    #ADDRESS    INSTRUCTION           ASCII
+    #c1000000:  8b 0d 80 16 5d 01     mov    0x15d1680,%ecx
+    line = string.split(objout.rstrip(),'\t')
+  else: #tracecap
+    #Example output:
+    #ins #\sADDRESS:\sASCII\t...
+    #(67525) c10017cc: lea 0x0(%esi),%esi    A@0xc15d1a80[0x00000000][4](R) T_begin (0x0) T_end (0x0)        R@esi[0xc15d1a80][4](W) T_begin (0x0) T_end (0x0) EFLAGS: 0x00000000 RAW: 0x8d742600
+    
+    #Here, our goal is to produce an array where line[0] is the address (with :)
+    #and line[2] is the ASCII representation
+    m =  trace_regex.match(objout.rstrip())
+    line=[] 
+    if(m):
+      line = [m.group(1), '', m.group(2)]
+
   if(len(line)>=3):
     for regex in regexes:
       if(regex.match(line[2])):

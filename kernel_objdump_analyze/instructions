@@ -1,2 +1,4 @@
 clts
-mov\s+\%\w+,\%cr\d
+#mov\s+\%\w+,\%cr\d
+mov\s+\%\w+,\%cr3
+#rdmsr
