@@ -39,9 +39,11 @@ jumps = { #define jumps, synomyms on same line
 'jns':'if not sign',
 'jo':'if overflow',
 'jp':'if parity', 'jpe':'if parity even',
-'js':'if sign'}
+'js':'if sign',
+'jmpq': 'unconditional qword'}
 
 calls = {'call': 'call', 'callq':'call qword'} 
+rets = {'ret':'return', 'retq':'return qword'}
 
 dump_file = sys.argv[1]
 root_name = sys.argv[2] #The function that will be the root of our CFG
@@ -66,6 +68,7 @@ objdump=[]
 indirect_count=0
 
 def main():
+  global root
   with open(dump_file) as f:
     for line in f:
       #First find out function of interest
@@ -119,6 +122,7 @@ def get_objdump_index(address):
   raise ValueError
 
 def add_cfg_edge(source,dest):
+  global CFG
   if(source not in CFG):
     CFG[source]=[]
   CFG[source].append(dest)
@@ -128,20 +132,24 @@ def print_instr(instr):
 
 def iterate_bb(source, blockaddr, callstack):
   global indirect_count
+  print("src: 0x%x, block: 0x%x, stack: %s"%(source,blockaddr,
+        string.join('0x%x' % s for s in callstack)))
   #Stop conditions: we return from root or an indirect (somehow)
   if(blockaddr==0 or blockaddr==-1):
     return
   add_cfg_edge(source, blockaddr)
   #Now, step through until we hit a jump, call, or ret
   for i in range(get_objdump_index(blockaddr),len(objdump)):
-    #instr, target = (0,0)
-    splited = string.split(objdump[i][1])
-    if(len(splited)<2):
-      print objdump[i][1]
-      #no target means no branch, walk right on by
-      continue
-
-    (instr, target) = (splited[0], splited[1])
+    target_hex=0
+    split = string.split(objdump[i][1])
+    instr=split[0]
+    if(len(split)>=2):
+      target = split[1]
+      try:
+        target_hex = int(target,16)	
+      except:
+        #already an int or an indirect (which won't be used)
+        target_hex = target
 
     #Look for jumps
     if(instr in jumps):
@@ -149,29 +157,29 @@ def iterate_bb(source, blockaddr, callstack):
         #Count it, abandon all hope
         indirect_count+=1
         return
-      if(instr == "jmp"):
+      if(instr == "jmp" or instr == "jmpq"):
         #unconditional
-        return iterate_bb(int(target,16), callstack[:])
+        return iterate_bb(blockaddr, target_hex, callstack[:])
       else:
         #Jump taken
-        iterate_bb(blockaddr, int(target,16), callstack[:])
+        iterate_bb(blockaddr, target_hex, callstack[:])
         #Jump not taken
         iterate_bb(blockaddr, objdump[i+1][0], callstack[:])
         return    
 
     #Look for calls 
     if(instr in calls):
-      #Indirect, just skip over it as if we returned
-      if '*' in target:
+      #Indirect or in PLT, just skip over it as if we returned
+      if '*' in target or 'plt' in split[2]:
         indirect_count+=1
         return iterate_bb(-1, objdump[i+1][0], callstack[:])
       else: #for readability
         #Tried appending within a slice, but it was unhappy
         newstack=callstack[:]
         newstack.append(objdump[i+1][0])
-        return iterate_bb(blockaddr, int(target,16), newstack)
-    if("ret" in instr):
-      print("stack",callstack)
+        return iterate_bb(blockaddr, target_hex, newstack)
+
+    if(instr in rets):
       return iterate_bb(blockaddr, callstack[-1], callstack[:-1])
 
 main()
