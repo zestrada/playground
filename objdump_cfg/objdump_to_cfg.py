@@ -66,9 +66,12 @@ root=0 #The root of our CFG
 #so having it sorted by address just makes sense
 objdump=[]
 indirect_count=0
+blockqueue=[]
 
 def main():
   global root
+  global blockqueue
+  
   with open(dump_file) as f:
     for line in f:
       #First find out function of interest
@@ -91,8 +94,12 @@ def main():
   if(root==0):
     print "Could not find root function for CFG: %s" % root_name
 
-  #Recursively process BBs until we get a return to 0
-  iterate_bb(0, root, [0])
+  #process BBs until we get a return to 0, used to be recursive, but python
+  #doesn't do tail recursion
+  blockqueue.append((0, root, [0])) #technically a stack, but whatever
+  while(len(blockqueue)>0):
+    block=blockqueue.pop()
+    iterate_bb(block[0], block[1], block[2])
   print_CFG()
   print("Indirect calls/jumps: %d"%indirect_count)
 
@@ -132,8 +139,9 @@ def print_instr(instr):
 
 def iterate_bb(source, blockaddr, callstack):
   global indirect_count
-  print("src: 0x%x, block: 0x%x, stack: %s"%(source,blockaddr,
-        string.join('0x%x' % s for s in callstack)))
+  global blockqueue
+  #print("src: 0x%x, block: 0x%x, stack: %s"%(source,blockaddr,
+  #      string.join('0x%x' % s for s in callstack)))
   #Stop conditions: we return from root or an indirect (somehow)
   if(blockaddr==0 or blockaddr==-1):
     return
@@ -159,12 +167,13 @@ def iterate_bb(source, blockaddr, callstack):
         return
       if(instr == "jmp" or instr == "jmpq"):
         #unconditional
-        return iterate_bb(blockaddr, target_hex, callstack[:])
+        blockqueue.append((blockaddr, target_hex, callstack[:]))
+        return 
       else:
-        #Jump taken
-        iterate_bb(blockaddr, target_hex, callstack[:])
         #Jump not taken
-        iterate_bb(blockaddr, objdump[i+1][0], callstack[:])
+        blockqueue.append((blockaddr, objdump[i+1][0], callstack[:]))
+        #Jump taken
+        blockqueue.append((blockaddr, target_hex, callstack[:]))
         return    
 
     #Look for calls 
@@ -172,14 +181,19 @@ def iterate_bb(source, blockaddr, callstack):
       #Indirect or in PLT, just skip over it as if we returned
       if '*' in target or 'plt' in split[2]:
         indirect_count+=1
-        return iterate_bb(-1, objdump[i+1][0], callstack[:])
+        blockqueue.append((-1, objdump[i+1][0], callstack[:]))
+        return 
       else: #for readability
         #Tried appending within a slice, but it was unhappy
         newstack=callstack[:]
         newstack.append(objdump[i+1][0])
-        return iterate_bb(blockaddr, target_hex, newstack)
+        blockqueue.append((blockaddr, target_hex, newstack))
+        return
 
     if(instr in rets):
-      return iterate_bb(blockaddr, callstack[-1], callstack[:-1])
+      blockqueue.append((blockaddr, callstack[-1], callstack[:-1]))
+      return
 
 main()
+
+#vim: set ts=2 sts=2 sw=2 et tw=80:
