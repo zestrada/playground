@@ -99,6 +99,7 @@ def print_CFG():
     print("0x%x: %s"%(key, string.join('0x%x' % t for t in value)))
 
 def get_objdump_index(address):
+  item = 0
   first = 0
   last = len(objdump)-1
 
@@ -113,6 +114,8 @@ def get_objdump_index(address):
       else:
         first = mid+1
   print("couldn't find address: %s"%address) 
+  print("couldn't find address: 0x%x"%int(address,16)) 
+  print("Last searched was: 0x%x"%item)
   raise ValueError
 
 def add_cfg_edge(source,dest):
@@ -125,18 +128,20 @@ def print_instr(instr):
 
 def iterate_bb(source, blockaddr, callstack):
   global indirect_count
-  #Stop condition
-  if(blockaddr==0):
+  #Stop conditions: we return from root or an indirect (somehow)
+  if(blockaddr==0 or blockaddr==-1):
     return
   add_cfg_edge(source, blockaddr)
   #Now, step through until we hit a jump, call, or ret
   for i in range(get_objdump_index(blockaddr),len(objdump)):
     #instr, target = (0,0)
-    try:
-      (instr, target) = string.split(objdump[i][1])
-    except ValueError:
+    splited = string.split(objdump[i][1])
+    if(len(splited)<2):
+      print objdump[i][1]
       #no target means no branch, walk right on by
       continue
+
+    (instr, target) = (splited[0], splited[1])
 
     #Look for jumps
     if(instr in jumps):
@@ -146,10 +151,10 @@ def iterate_bb(source, blockaddr, callstack):
         return
       if(instr == "jmp"):
         #unconditional
-        return iterate_bb(target, callstack[:])
+        return iterate_bb(int(target,16), callstack[:])
       else:
         #Jump taken
-        iterate_bb(blockaddr, target, callstack[:])
+        iterate_bb(blockaddr, int(target,16), callstack[:])
         #Jump not taken
         iterate_bb(blockaddr, objdump[i+1][0], callstack[:])
         return    
@@ -164,8 +169,9 @@ def iterate_bb(source, blockaddr, callstack):
         #Tried appending within a slice, but it was unhappy
         newstack=callstack[:]
         newstack.append(objdump[i+1][0])
-        return iterate_bb(blockaddr, target, newstack)
+        return iterate_bb(blockaddr, int(target,16), newstack)
     if("ret" in instr):
-      iterate_bb(blockaddr, callstack[-1], callstack[:-1])
+      print("stack",callstack)
+      return iterate_bb(blockaddr, callstack[-1], callstack[:-1])
 
 main()
