@@ -67,6 +67,8 @@ root=0 #The root of our CFG
 objdump=[]
 indirect_count=0
 blockqueue=[]
+#Offset to add to all addresses. this is 32bit ELF w/o ASLR
+offset=0x80000000
 
 def main():
   global root
@@ -79,7 +81,7 @@ def main():
       if(m):
         if(m.group(2) == root_name):
           print(m.group(1), m.group(2))
-          root=int(m.group(1),16)
+          root=offset+int(m.group(1),16)
 
       #Example tab-delimited output:
       #ADDRESS    INSTRUCTION           ASCII
@@ -89,7 +91,7 @@ def main():
       #Symbols have 2 fields, but their actual first instruction will have 3
       if(len(fields)<3):
         continue
-      objdump.append((int(fields[0].replace(":",""),16), fields[2]))
+      objdump.append((offset+int(fields[0].replace(":",""),16), fields[2]))
 
   if(root==0):
     print "Could not find root function for CFG: %s" % root_name
@@ -123,8 +125,12 @@ def get_objdump_index(address):
         last = mid-1
       else:
         first = mid+1
-  print("couldn't find address: %s"%address) 
-  print("couldn't find address: 0x%x"%int(address,16)) 
+  print("couldn't find address: '%s'"%address) 
+  print("couldn't find address: '%x'"%address) 
+  try:
+    print("couldn't find address: 0x%x"%int(address,16)) 
+  except:
+    pass
   print("Last searched was: 0x%x"%item)
   raise ValueError
 
@@ -156,7 +162,7 @@ def iterate_bb(source, blockaddr, callstack):
     if(len(split)>=2):
       target = split[1]
       try:
-        target_hex = int(target,16)	
+        target_hex = offset+int(target,16)	
       except:
         #already an int or an indirect (which won't be used)
         target_hex = target
