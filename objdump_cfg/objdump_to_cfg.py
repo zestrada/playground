@@ -128,24 +128,26 @@ def get_objdump_index(address):
   print("Last searched was: 0x%x"%item)
   raise ValueError
 
-def add_cfg_edge(source,dest):
-  global CFG
-  if(source not in CFG):
-    CFG[source]=[]
-  CFG[source].append(dest)
-
 def print_instr(instr):
     print("0x%x: %s"%(objdump[instr][0],objdump[instr][1]))
 
 def iterate_bb(source, blockaddr, callstack):
   global indirect_count
   global blockqueue
+  global CFG
   #print("src: 0x%x, block: 0x%x, stack: %s"%(source,blockaddr,
   #      string.join('0x%x' % s for s in callstack)))
   #Stop conditions: we return from root or an indirect (somehow)
   if(blockaddr==0 or blockaddr==-1):
     return
-  add_cfg_edge(source, blockaddr)
+  if(source not in CFG):
+    CFG[source]=[]
+  else:
+    if(blockaddr in CFG[source]):
+      #Loop! We've been here before, assume the other branch will get us out
+      return
+  CFG[source].append(blockaddr)
+
   #Now, step through until we hit a jump, call, or ret
   for i in range(get_objdump_index(blockaddr),len(objdump)):
     target_hex=0
