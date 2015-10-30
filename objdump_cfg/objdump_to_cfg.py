@@ -1,15 +1,5 @@
 #!/usr/bin/env python
 #
-#Analyze a kernel using objdump, listing which functions call which instructions
-#instructions of interest are given as a file of newline-delimited regexes
-#(text version, at&t syntax).
-#
-#We take an unzipped kernel source and a System.map to bound functions.
-#If you don't have the unzipped version, you can use scripts/extract-vmlinux
-#from the kernel.org tree to get it.  Likewise, you can use scripts/mksysmap to
-#generate that one.
-#
-
 import re
 import sys
 import subprocess
