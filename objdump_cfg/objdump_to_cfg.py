@@ -21,7 +21,6 @@ jumps = { #define jumps, synomyms on same line
 'jge':'if greater or equal',
 'jl':'if less', 'jnge':'if not greater or equal',
 'jle':'if less or equal', 'jnl':'if not less',
-'jmp':'unconditional',
 'jne':'if not equal', 'jnz':'if not zero',
 'jng':'if not greater',
 'jno':'if not overflow',
@@ -29,7 +28,10 @@ jumps = { #define jumps, synomyms on same line
 'jns':'if not sign',
 'jo':'if overflow',
 'jp':'if parity', 'jpe':'if parity even',
-'js':'if sign',
+'js':'if sign'}
+
+jumps_uncond = { 
+'jmp':'unconditional',
 'jmpq': 'unconditional qword'}
 
 calls = {'call': 'call', 'callq':'call qword'} 
@@ -42,8 +44,8 @@ root_name = sys.argv[2] #The function that will be the root of our CFG
 symbol_re = re.compile("^([a-fA-F0-9]+) <([\.\w]+)>:\s*$") 
 symbol_plt_re = re.compile("^([a-fA-F0-9]+) <([@\w]+)>:\s*$")
 
-#TODO: handle conditionals
 print "#address;[target1, target2, ...]" #our output format
+print "#0 == root, -1 == indirect" #right now we only use indirects as sources
 
 #CFG: key is source address, values are all targets
 #     note that source=0 means root and source=-1 means we came from an indirect
@@ -144,6 +146,7 @@ def iterate_bb(source, blockaddr, callstack):
       return
   CFG[source].append(blockaddr)
 
+  skip_next_jump = False
   #Now, step through until we hit a jump, call, or ret
   for i in range(get_objdump_index(blockaddr),len(objdump)):
     target_hex=0
@@ -157,16 +160,22 @@ def iterate_bb(source, blockaddr, callstack):
         #already an int or an indirect (which won't be used)
         target_hex = target
 
-    #Look for jumps
+    #Check for GCC stack protector in %gs:0x14
+    if("xor" in instr and "gs:0x14" in target):
+      skip_next_jump = True
+      continue
+    
+    #Look for conditional jumps
     if(instr in jumps):
+      if skip_next_jump:
+        #To avoid following stack protector failure paths...
+        #Only process jump not taken branch
+        blockqueue.append((blockaddr, objdump[i+1][0], callstack[:]))
+        return
       if '*' in target:
         #Count it, abandon all hope
         indirect_count+=1
         return
-      if(instr == "jmp" or instr == "jmpq"):
-        #unconditional
-        blockqueue.append((blockaddr, target_hex, callstack[:]))
-        return 
       else:
         #Jump not taken
         blockqueue.append((blockaddr, objdump[i+1][0], callstack[:]))
@@ -174,8 +183,36 @@ def iterate_bb(source, blockaddr, callstack):
         blockqueue.append((blockaddr, target_hex, callstack[:]))
         return    
 
+    #Look for unconditional jumps
+    if(instr in jumps_uncond):
+      blockqueue.append((blockaddr, target_hex, callstack[:]))
+      return 
+
     #Look for calls 
     if(instr in calls):
+      #This is a hackish heuristic to get around calls that never return:
+      #which cause a huge problem for our CFG since we'll just skip over them
+      #and act as if they had returned
+      #If we see a push %ebp or sub X,%esp, then we've hit the next function.
+      #Seeing that before a ret means this call was never expected to return
+      #so we just bail
+      for j in range(i,len(objdump)):
+        split_call = string.split(objdump[j][1])
+        instr_call = split_call[0]
+        target_call = ""
+        if(len(split_call)>=2):
+          target_call = split_call[1]
+        
+        #Either one of these conditions represents a new function to us...
+        if(("sub" in instr_call and "esp" in target_call)):
+          return
+        if(("push" in instr_call and "ebp" in target_call)):
+          return
+
+        #We're this path will not go into the next function if we return
+        if(instr_call in rets or instr_call in jumps_uncond):
+          break
+
       #Indirect or in PLT, just skip over it as if we returned
       if '*' in target or 'plt' in split[2]:
         indirect_count+=1
@@ -194,4 +231,4 @@ def iterate_bb(source, blockaddr, callstack):
 
 main()
 
-#vim: set ts=2 sts=2 sw=2 et tw=80:
+#vim: set ts=2 sts=2 sw=2 et si tw=80:
