@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-#
+#vim: set ts=2 sts=2 sw=2 et si tw=80:
 import re
 import sys
 import subprocess
 import string
 
-#Build a CFG for a function based on objdump -d
+#Build a CFG for a function based on objdump -d output
 #usage: objdump_to_cfg.py "objdump -d output" function_name
 
 #jumps from
@@ -75,7 +75,7 @@ def main():
           print(m.group(1), m.group(2))
           root=offset+int(m.group(1),16)
 
-      #Example tab-delimited output:
+      #Example tab-delimited output from objdump:
       #ADDRESS    INSTRUCTION           ASCII
       #c1000000:  8b 0d 80 16 5d 01     mov    0x15d1680,%ecx
       fields = string.split(line.rstrip(),'\t')
@@ -83,14 +83,20 @@ def main():
       #Symbols have 2 fields, but their actual first instruction will have 3
       if(len(fields)<3):
         continue
+      #objdump -d is a linear disassembler, so we every we get will already be
+      #sorted by address. If you use -D or something, you may need to re-sort
+
+      #Our in-memory representation of objdump output is an list of tuples of 
+      #the form (address, instruction)
+      #Note that we store the address in int form for searching
       objdump.append((offset+int(fields[0].replace(":",""),16), fields[2]))
 
   if(root==0):
     print "Could not find root function for CFG: %s" % root_name
 
   #process BBs until we get a return to 0, used to be recursive, but python
-  #doesn't do tail recursion
-  blockqueue.append((0, root, [0])) #technically a stack, but whatever
+  #doesn't do tail recursion so this should be better?
+  blockqueue.append((0, root, [0])) #queue is technically a stack, but whatever
   while(len(blockqueue)>0):
     block=blockqueue.pop()
     iterate_bb(block[0], block[1], block[2])
@@ -107,6 +113,7 @@ def print_CFG():
     print("0x%x: %s"%(key, array_to_hex(value)))
 
 def get_objdump_index(address):
+  #Binary search in our array to find our target
   item = 0
   first = 0
   last = len(objdump)-1
@@ -131,6 +138,7 @@ def get_objdump_index(address):
   raise ValueError
 
 def print_instr(instr):
+  #Useful for debugging if you want to see what's going on
   print("0x%x: %s"%(objdump[instr][0],objdump[instr][1]))
 
 def count_indirect(source_addr):
@@ -138,18 +146,23 @@ def count_indirect(source_addr):
   indirects.append(source_addr)
 
 def iterate_bb(source, blockaddr, callstack):
+  #The definition of basic block is not the compiler definition!
+  #That is, we can jump inside the middle of blocks
+  #We also sling around a callstack (passed by value) for proper return tracking
   global blockqueue
   global CFG
+  #If you want to trace exactly what is happening, uncomment this:
   #print("src: 0x%x, block: 0x%x, stack: %s"%(source,blockaddr,
-  #      string.join('0x%x' % s for s in callstack)))
-  #Stop conditions: we return from root or an indirect (somehow)
+  #      array_to_hex(callstack)))
   if(blockaddr==0 or blockaddr==-1):
+    #Stop conditions: we return from root or an indirect (somehow)
     return
   if(source not in CFG):
+    #First outgoing edge
     CFG[source]=[]
   else:
     if(blockaddr in CFG[source]):
-      #Loop! We've been here before, assume the other branch will get us out
+      #Loop! We've been here before, the other branch should get us out
       return
   CFG[source].append(blockaddr)
 
@@ -167,7 +180,8 @@ def iterate_bb(source, blockaddr, callstack):
         #already an int or an indirect (which won't be used)
         target_hex = target
 
-    #Check for GCC stack protector in %gs:0x14
+    #Check for GCC stack protector. That next conditional jump will check for
+    #fail, so let's skip it
     if("xor" in instr and "gs:0x14" in target):
       skip_next_jump = True
       continue
@@ -176,11 +190,11 @@ def iterate_bb(source, blockaddr, callstack):
     if(instr in jumps):
       if skip_next_jump:
         #To avoid following stack protector failure paths...
-        #Only process jump not taken branch
+        #Only process not taken branch
         blockqueue.append((blockaddr, objdump[i+1][0], callstack[:]))
         return
       if '*' in target:
-        #Count it, abandon all hope
+        #Indirect, track it and abandon all hope
         count_indirect(objdump[i][0])
         return
       else:
@@ -201,8 +215,8 @@ def iterate_bb(source, blockaddr, callstack):
       #which cause a huge problem for our CFG since we'll just skip over them
       #and act as if they had returned
       #If we see a push %ebp or sub X,%esp, then we've hit the next function.
-      #Seeing that before a ret means this call was never expected to return
-      #so we just bail
+      #Seeing that before a ret or unconditional jump means this call was never 
+      #expected to return so we bail
       for j in range(i,len(objdump)):
         split_call = string.split(objdump[j][1])
         instr_call = split_call[0]
@@ -216,26 +230,26 @@ def iterate_bb(source, blockaddr, callstack):
         if(("push" in instr_call and "ebp" in target_call)):
           return
 
-        #We're this path will not go into the next function if we return
+        #This path will not go into the next function if we return
         if(instr_call in rets or instr_call in jumps_uncond):
           break
 
-      #Indirect or in PLT, just skip over it as if we returned
+      #Indirect or in PLT, just skip over it as if we returned, but track its
+      #source as coming from an indirect
       if '*' in target or 'plt' in split[2]:
         count_indirect(objdump[i][0])
         blockqueue.append((-1, objdump[i+1][0], callstack[:]))
         return 
       else: #for readability
-        #Tried appending within a slice, but it was unhappy
+        #Tried appending within a slice, but python got angry at me
         newstack=callstack[:]
         newstack.append(objdump[i+1][0])
         blockqueue.append((blockaddr, target_hex, newstack))
         return
 
     if(instr in rets):
+      #Return, pop address off the stack
       blockqueue.append((blockaddr, callstack[-1], callstack[:-1]))
       return
 
 main()
-
-#vim: set ts=2 sts=2 sw=2 et si tw=80:
