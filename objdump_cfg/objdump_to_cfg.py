@@ -57,7 +57,7 @@ root=0 #The root of our CFG
 #Went with this over a dict since we should be iterating more than searching
 #so having it sorted by address just makes sense
 objdump=[]
-indirect_count=0
+indirects=[]
 blockqueue=[]
 #Offset to add to all addresses. this is 32bit ELF w/o ASLR
 offset=0x80000000
@@ -95,12 +95,16 @@ def main():
     block=blockqueue.pop()
     iterate_bb(block[0], block[1], block[2])
   print_CFG()
-  print("Indirect calls/jumps: %d"%indirect_count)
+  print("Indirect calls/jumps: %d"%len(indirects))
+  print("%s"%array_to_hex(indirects))
 
 ####END MAIN BEGIN FUNCTION DEFS#####
+def array_to_hex(array):
+  return string.join('0x%x' % i for i in array)
+
 def print_CFG():
   for(key, value) in CFG.iteritems():
-    print("0x%x: %s"%(key, string.join('0x%x' % t for t in value)))
+    print("0x%x: %s"%(key, array_to_hex(value)))
 
 def get_objdump_index(address):
   item = 0
@@ -127,10 +131,13 @@ def get_objdump_index(address):
   raise ValueError
 
 def print_instr(instr):
-    print("0x%x: %s"%(objdump[instr][0],objdump[instr][1]))
+  print("0x%x: %s"%(objdump[instr][0],objdump[instr][1]))
+
+def count_indirect(source_addr):
+  global indirects
+  indirects.append(source_addr)
 
 def iterate_bb(source, blockaddr, callstack):
-  global indirect_count
   global blockqueue
   global CFG
   #print("src: 0x%x, block: 0x%x, stack: %s"%(source,blockaddr,
@@ -174,7 +181,7 @@ def iterate_bb(source, blockaddr, callstack):
         return
       if '*' in target:
         #Count it, abandon all hope
-        indirect_count+=1
+        count_indirect(objdump[i][0])
         return
       else:
         #Jump not taken
@@ -215,7 +222,7 @@ def iterate_bb(source, blockaddr, callstack):
 
       #Indirect or in PLT, just skip over it as if we returned
       if '*' in target or 'plt' in split[2]:
-        indirect_count+=1
+        count_indirect(objdump[i][0])
         blockqueue.append((-1, objdump[i+1][0], callstack[:]))
         return 
       else: #for readability
