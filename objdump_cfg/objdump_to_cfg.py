@@ -59,6 +59,7 @@ root=0 #The root of our CFG
 objdump=[]
 indirects=[]
 blockqueue=[]
+paths_visited=[]
 #Offset to add to all addresses. this is 32bit ELF w/o ASLR
 offset=0x80000000
 
@@ -151,20 +152,26 @@ def iterate_bb(source, blockaddr, callstack):
   #We also sling around a callstack (passed by value) for proper return tracking
   global blockqueue
   global CFG
+  global paths_visited
   #If you want to trace exactly what is happening, uncomment this:
-  #print("src: 0x%x, block: 0x%x, stack: %s"%(source,blockaddr,
+  #print("current: src: 0x%x, block: 0x%x, stack: %s"%(source,blockaddr,
   #      array_to_hex(callstack)))
+  #print("queue: %s"%map(lambda x: "(source: 0x%x, target: 0x%x, stack: %s)"%\
+  #                        (x[0], x[1], array_to_hex(x[2])), blockqueue))
   if(blockaddr==0 or blockaddr==-1):
-    #Stop conditions: we return from root or an indirect (somehow)
+    #Stop conditions: we return to root or an indirect (somehow)
     return
+
   if(source not in CFG):
     #First outgoing edge
     CFG[source]=[]
-  else:
-    if(blockaddr in CFG[source]):
-      #Loop! We've been here before, the other branch should get us out
-      return
-  CFG[source].append(blockaddr)
+  if(blockaddr not in CFG[source]):
+    CFG[source].append(blockaddr)
+
+  if((source, blockaddr, callstack[:]) in paths_visited):
+    #Poor man's loop detection
+    return
+  paths_visited.append((source, blockaddr, callstack[:]))
 
   skip_next_jump = False
   #Now, step through until we hit a jump, call, or ret
@@ -172,6 +179,7 @@ def iterate_bb(source, blockaddr, callstack):
     target_hex=0
     split = string.split(objdump[i][1])
     instr=split[0]
+    #print_instr(i)
     if(len(split)>=2):
       target = split[1]
       try:
@@ -198,11 +206,11 @@ def iterate_bb(source, blockaddr, callstack):
         count_indirect(objdump[i][0])
         return
       else:
-        #Jump not taken
+        #Handle jump not taken
         blockqueue.append((blockaddr, objdump[i+1][0], callstack[:]))
-        #Jump taken
+        #Handle jump taken
         blockqueue.append((blockaddr, target_hex, callstack[:]))
-        return    
+        return
 
     #Look for unconditional jumps
     if(instr in jumps_uncond):
@@ -249,6 +257,8 @@ def iterate_bb(source, blockaddr, callstack):
 
     if(instr in rets):
       #Return, pop address off the stack
+      #print("Returning, adding to blockqueue: (0x%x, 0x%x, %s)"%\
+      #      (blockaddr, callstack[-1], array_to_hex(callstack[:-1])))
       blockqueue.append((blockaddr, callstack[-1], callstack[:-1]))
       return
 
