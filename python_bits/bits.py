@@ -23,14 +23,18 @@ def toMB(x):
 def toGB(x):
   return x/(2**30)
 
-def KB(x)
+def KB(x):
   return x*(2**10)
 
-def MB(x)
+def MB(x):
   return x*(2**20)
 
-def GB(x)
+def GB(x):
   return x*(2**30)
+
+#Other useful representations
+def bin(x):
+  print "{0:b}".format(x)
 
 def bits(x):
   return int(math.ceil(math.log(x,2)))
