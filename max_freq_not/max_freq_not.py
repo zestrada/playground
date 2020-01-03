@@ -29,6 +29,11 @@
 #https://electronics.stackexchange.com/questions/20510/determine-mosfet-switching-speed
 
 #TODO: how many transistors typically in a datapath? fanout, etc...
+#Need to consider pipeline depth... that typically changes
+#Really should just model as an ALU and assume an ideal pipeline
+#Need to think of slowest reasonable functional unit to limit pipeline perf
+#Maybe there's a standard instruction mix we can use and then assume very good
+#circuits for those
 
 #Considering quantum stuff: chapter 11 of QTATT
 #Eq 11.2.3 for quantum transport with dephasing
