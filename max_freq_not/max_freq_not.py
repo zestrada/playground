@@ -14,7 +14,9 @@
 
 
 #From 19.16 of (page 700) of Pierret
-#I_dsat = Z*Co(V_g-V_t)*v_sat
+#I_dsat = W*Co(V_g-V_t)*v_sat
+#Still a V_g dependence. I suppose we can always just assume that we will use
+#default V_g for the processor
 
 #Based on this model for drain current:
 #https://ecee.colorado.edu/~bart/book/ex007.htm
@@ -27,3 +29,20 @@
 #https://electronics.stackexchange.com/questions/20510/determine-mosfet-switching-speed
 
 #TODO: how many transistors typically in a datapath? fanout, etc...
+
+#Considering quantum stuff: chapter 11 of QTATT
+#Eq 11.2.3 for quantum transport with dephasing
+
+#Maybe only include contact resistance? how to measure that?
+#Considering poisson equation... 
+
+#Can consider maximum conductance per level:
+#25.8kOhm per channel
+#Need to solve self-consistently Fig  1.4.5
+
+#Page 24 of QTATT
+
+#can't consider ballistic limit since actually a larger transistor would be
+#faster - larger cross-sectional area
+#but they would have a larger gate capacitor to charge...
+#but the electrostatics get messy, lots of electrons close to each other
